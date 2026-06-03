@@ -1,0 +1,61 @@
+name: Release Automatizado
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Vital para poder leer el historial de tags
+
+      - name: Calcular Siguiente Versión
+        id: bump_version
+        run: |
+          # 1. Obtener el último tag que cumpla con el formato vX.Y.Z
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Último tag encontrado: $LAST_TAG"
+          
+          # 2. Limpiar la 'v' y separar los componentes (Major.Minor.Patch)
+          VERSION_CLEAN=${LAST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_CLEAN"
+          
+          # 3. Incrementar el Minor en 1
+          NEW_MINOR=$((MINOR + 1))
+          NEW_MAJOR=$MAJOR
+          NEW_PATCH=0 # Según tu regla, el patch se mantiene en 0
+          
+          # 4. Aplicar tu regla: si Minor llega a 10, Major suma 1 y Minor vuelve a 0
+          if [ "$NEW_MINOR" -eq 10 ]; then
+            NEW_MAJOR=$((MAJOR + 1))
+            NEW_MINOR=0
+          fi
+          
+          # 5. Armar la nueva versión
+          NEW_TAG="v$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+          echo "Nueva versión calculada: $NEW_TAG"
+          
+          # Guardar el resultado en los outputs del step para usarlo después
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Crear GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.bump_version.outputs.new_tag }}
+          name: Release ${{ steps.bump_version.outputs.new_tag }}
+          body: |
+            ## Changelog Automático
+            - Se han integrado nuevas funcionalidades desde la rama de desarrollo.
+            - Despliegue completado a Staging/Producción.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
